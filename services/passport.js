@@ -1,5 +1,7 @@
 const passport = require("passport");
+const jwt = require("jwt-simple");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const AzureStrategy = require("passport-azure-ad-oauth2").Strategy;
 const mongoose = require("mongoose");
 const keys = require("../config/keys");
 
@@ -24,18 +26,43 @@ passport.use(
       callbackURL: "/auth/google/callback",
       proxy: true,
     },
-    (accessToken, refreshToken, profile, done) => {
-      User.findOne({ googleId: profile.id }).then((existingUser) => {
-        if (existingUser) {
-          //we already have a record with the given profile
-          done(null, existingUser);
-        } else {
-          // we don't have a user record with this ID, make one
-          new User({ googleId: profile.id })
-            .save()
-            .then((user) => done(null, user));
-        }
-      });
+    async (accessToken, refreshToken, profile, done) => {
+      const existingUser = await User.findOne({ googleId: profile.id });
+      if (existingUser) {
+        //we already have a record with the given profile
+        return done(null, existingUser);
+      }
+      // we don't have a user record with this ID, make one
+      const user = await new User({ googleId: profile.id }).save();
+      done(null, user);
+    }
+  )
+);
+
+passport.use(
+  new AzureStrategy(
+    {
+      clientID: keys.azureClientID,
+      clientSecret: keys.azureClientSecret,
+      callbackURL: "/auth/azure/callback",
+      proxy: true,
+    },
+    async (accessToken, refreshToken, params, profile, done) => {
+      var azureProfile = jwt.decode(params.id_token, "", true);
+      console.log("azureProfileupn", azureProfile.upn);
+      console.log("azureProfile", azureProfile);
+      const existingUser = await User.findOne({ googleId: azureProfile.upn });
+      if (existingUser) {
+        //we already have a record with the given profile
+        return done(null, existingUser);
+      }
+      // we don't have a user record with this ID, make one
+      const user = await new User({
+        googleId: azureProfile.upn,
+        firstName: azureProfile.given_name,
+        lastName: azureProfile.family_name,
+      }).save();
+      done(null, user);
     }
   )
 );
